@@ -1,0 +1,31 @@
+name: Ratio Watch
+
+on:
+  schedule:
+    # 평일 장 마감 후 하루 1회 (UTC 22:15 = 한국 07:15)
+    - cron: "15 22 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "휴장일·주말에도 가장 최근 거래일 기준으로 실행"
+        type: boolean
+        default: true
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - run: python ratio_watch.py
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          FORCE: ${{ inputs.force && '1' || '0' }}
