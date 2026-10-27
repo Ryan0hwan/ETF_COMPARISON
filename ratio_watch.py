@@ -27,7 +27,7 @@ ROOT = Path(__file__).parent
 ALIAS = {"SPX": "^GSPC", "NDX": "^NDX", "VIX": "^VIX", "VVIX": "^VVIX", "VIX3M": "^VIX3M", "DXY": "DX-Y.NYB"}
 CROSS_CHECK = ["XLY/XLP", "HYG/IEF", "RSP/SPY"]
 TREND_ICON = {1: "📈", 0: "➖", -1: "📉"}
-CATEGORIES = ["위험선호", "성장가치", "시장폭", "경기인플레", "금리금융", "원자재통화"]
+CATEGORIES = ["위험선호", "성장가치", "기술내부", "시장폭", "경기인플레", "금리금융", "금리민감", "원자재통화"]
 
 
 def load_ratios() -> list[dict]:
@@ -128,9 +128,29 @@ def interpret(res: dict, data: dict) -> list[str]:
     g = _avg(res, ["QQQ/SPY", "IWF/IWD"])
     if g is not None:
         lines.append("스타일: 성장·대형기술 주도" if g > 0.5 else ("스타일: 가치·비기술 로테이션" if g < -0.5 else "스타일: 성장/가치 혼조"))
-    t = _t(res, "SMH/IGV")
-    if t:
-        lines.append("기술 내부: 반도체(AI 인프라) > 소프트웨어" if t > 0 else "기술 내부: 소프트웨어 > 반도체")
+    # 기술주 내부 이동: 반도체 vs 소프트웨어·클라우드, 메모리
+    smh_igv, cloud, mem = _t(res, "SMH/IGV"), _t(res, "WCLD/SMH"), _t(res, "DRAM/SMH")
+    if smh_igv == -1 and cloud == 1:
+        lines.append("기술 내부: 하드웨어(반도체) → 소프트웨어·클라우드로 자금 이동")
+    elif smh_igv == 1 and cloud == -1:
+        lines.append("기술 내부: 소프트웨어 → 반도체(AI 인프라)로 자금 이동")
+    elif smh_igv:
+        lines.append("기술 내부: 반도체(AI 인프라) > 소프트웨어" if smh_igv > 0 else "기술 내부: 소프트웨어 > 반도체")
+    if mem:
+        lines.append("메모리: 반도체 전체보다 강함 → 메모리 사이클 상승" if mem > 0
+                     else "메모리: 반도체 전체보다 약함 → 메모리 사이클 둔화")
+    # 금리 하락 기대 로테이션: 장기채·지역은행·주택건설·리츠가 함께 움직이는지
+    rate = [n for n in ("TLT/SHY", "KRE/SPY", "ITB/SPY", "SCHH/SPY") if n in res]
+    if len(rate) >= 3:
+        ups = sum(res[n]["trend"] == 1 for n in rate)
+        downs = sum(res[n]["trend"] == -1 for n in rate)
+        early = sum((res[n]["m1"] or 0) > 0 and (res[n]["w1"] or 0) > 0 for n in rate)
+        if ups >= 3:
+            lines.append(f"금리 민감 업종: {ups}/{len(rate)}개 상승 추세 → 금리 고점 반영 로테이션 확인")
+        elif early >= 3:
+            lines.append(f"금리 민감 업종: {early}/{len(rate)}개가 1주·1개월 모두 반등 → 금리 고점 기대 초기 신호 (추세 전환 전)")
+        elif downs >= 3:
+            lines.append(f"금리 민감 업종: {downs}/{len(rate)}개 하락 추세 → 고금리 부담 지속")
     b = _avg(res, ["RSP/SPY", "IWM/QQQ"])
     if b is not None:
         lines.append("시장폭: 상승이 넓게 퍼짐" if b > 0.5 else ("시장폭: 소수 대형주 쏠림" if b < -0.5 else "시장폭: 혼조"))
@@ -155,7 +175,9 @@ def interpret(res: dict, data: dict) -> list[str]:
     for name, up, dn in (("GDX/GLD", "금광주 > 금 → 금 랠리 지속성 높음", "금광주 < 금 → 금 랠리 힘 약함"),
                          ("SLV/GLD", "은 > 금 → 위험선호·산업 수요", "은 < 금 → 방어적 귀금속 수요"),
                          ("EEM/SPY", "신흥국 > 미국 → 달러 약세 장세", "미국 > 신흥국 → 달러 강세·미국 쏠림"),
-                         ("IBIT/QQQ", "비트코인 > 나스닥 → 투기 수요 강함", "비트코인 < 나스닥 → 투기 수요 약화")):
+                         ("IBIT/QQQ", "비트코인 > 나스닥 → 투기 수요 강함", "비트코인 < 나스닥 → 투기 수요 약화"),
+                         ("EWY/SPY", "한국 > 미국 → 한국 상대 강세", "한국 < 미국 → 한국 상대 약세" +
+                          (" (메모리 약세와 동행)" if mem == -1 else ""))):
         t = _t(res, name)
         if t:
             lines.append(up if t > 0 else dn)
